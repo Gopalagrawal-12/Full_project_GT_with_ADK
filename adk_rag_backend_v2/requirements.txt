@@ -1,0 +1,24 @@
+# Core
+google-adk>=2.4.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+asyncpg>=0.29
+python-multipart>=0.0.9
+pydantic>=2.7
+google-genai>=0.8
+python-dotenv>=1.0
+pandas>=2.2
+
+# Vector pipeline (embeddings via any OpenAI-compatible endpoint, e.g. Ollama)
+openai>=1.40
+
+# Auto column-metadata generation at CSV ingestion time (see api/ingest_routes.py).
+# Requires GROQ_API_KEY in the environment.
+groq>=0.11
+
+# --- Optional extras (install only what you need) ---
+# Rich document parsing for PDF/DOCX/PPTX/XLSX/HTML ingestion + token-aware
+# semantic chunking. Without these, tools/chunker.py automatically falls back
+# to the dependency-free SimpleChunker and vector ingestion accepts .md/.txt only.
+# docling>=2.0
+# transformers>=4.40
