@@ -30,7 +30,7 @@ import os
 
 from google.adk import Agent
 
-_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-flash-latest")
+_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-2.5-flash")
 
 query_generation_agent = Agent(
     name="query_generation",
@@ -57,7 +57,9 @@ query_generation_agent = Agent(
         "   (asyncpg's fetch() rejects multi-statement bodies).\n"
         "5. If the time-series guidance above is not 'NONE', structure the query using "
         "   the suggested CTE shape.\n"
-        "6. Never emit INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE -- SELECT/CTE only."
+        "6. Never emit INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE -- SELECT/CTE only.\n"
+        "7. When referencing the file's name in the file_metadata table, you must strictly "
+        "   use `m.file_name`. Never use `m.filename`."
     ),
     output_key="generated_sql",
 )

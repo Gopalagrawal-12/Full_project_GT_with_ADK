@@ -15,7 +15,7 @@ from google.adk.tools import FunctionTool
 
 from tools.sql_execution_tool import execute_sql
 
-_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-flash-latest")
+_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-2.5-flash")
 
 query_execution_agent = Agent(
     name="query_execution",

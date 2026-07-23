@@ -1,43 +1,13 @@
 """
 services/orchestrator.py
 --------------------------
-Builds the ADK `Workflow` graph: a directed pipeline from START through the
-10 micro-agents in agents/, with a conditional branch after classification
-(SQL vs VECTOR) and a shared fallback branch into `external_support` whenever
-either branch fails or can't produce a safe answer.
-
-Graph shape
------------
-    START
-      -> load_schema_context   (cheap grounding: table/doc names, one-line summaries)
-      -> query_understanding
-      -> query_classification
-      -> route_by_classification (function node, emits route "SQL" | "VECTOR")
-           "SQL"    -> time_lag -> load_relevant_schema_detail (entity-filtered,
-                       full column metadata -- SQL-branch only, computed only
-                       after parsed_intent exists) -> query_generation
-                       -> query_review -> query_execution -> query_visualization
-                       -> check_fallback
-           "VECTOR" -> vector_retrieval -> vector_synthesis -> check_fallback
-                            check_fallback:
-                              "NEEDS_SUPPORT" -> external_support   (terminal)
-                              <no match / DEFAULT> -> (terminal, final_answer already set)
-
-Only three nodes ever write `state["final_answer"]`: `query_visualization`,
-`vector_synthesis`, and `external_support`. The API layer only ever needs to
-read that one key, regardless of which branch executed.
-
-Context-window discipline: `load_schema_context` fetches a cheap overview
-used by every agent that needs SOME schema awareness (understanding,
-classification). The expensive, fully-detailed column metadata is fetched
-only once we know we're on the SQL path AND only after `parsed_intent` tells
-us which entities/metrics actually matter -- see
-`services/graph_nodes.py::load_relevant_schema_detail` and
-`tools/schema_tool.py::fetch_schema_relevant_detail`.
+Builds the ADK `Workflow` graph with throttling delays and isolated branch nodes.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from google.adk.workflow import START, Workflow
 
 from agents import (
@@ -59,9 +29,47 @@ from services.graph_nodes import (
     route_by_classification,
 )
 
+logger = logging.getLogger("adk_rag.orchestrator")
+
+# ---------------------------------------------------------
+# THROTTLING NODES (Free Tier Workaround)
+# Every delay node MUST be a unique function reference so
+# branch paths do not accidentally cross-trigger each other.
+# ---------------------------------------------------------
+async def delay_1(ctx):
+    logger.info("Throttling pipeline (Delay 1/5) for 15s to respect Gemini Free Tier limits...")
+    await asyncio.sleep(15)
+    return {}
+
+async def delay_2(ctx):
+    logger.info("Throttling pipeline (Delay 2/5 - SQL) for 15s to respect Gemini Free Tier limits...")
+    await asyncio.sleep(15)
+    return {}
+
+async def delay_3(ctx):
+    logger.info("Throttling pipeline (Delay 3/5 - SQL) for 15s to respect Gemini Free Tier limits...")
+    await asyncio.sleep(15)
+    return {}
+
+async def delay_4(ctx):
+    logger.info("Throttling pipeline (Delay 4/5 - SQL) for 15s to respect Gemini Free Tier limits...")
+    await asyncio.sleep(15)
+    return {}
+
+async def delay_5(ctx):
+    logger.info("Throttling pipeline (Delay 5/5 - SQL) for 15s to respect Gemini Free Tier limits...")
+    await asyncio.sleep(15)
+    return {}
+
+# Dedicated delay function for the VECTOR path
+async def vector_delay_1(ctx):
+    logger.info("Throttling pipeline (Delay - Vector Branch) for 15s to respect Gemini Free Tier limits...")
+    await asyncio.sleep(15)
+    return {}
+# ---------------------------------------------------------
 
 def build_sql_rag_workflow() -> Workflow:
-    """Constructs the graph-based Workflow. Call once at app startup and reuse."""
+    """Constructs the graph-based Workflow."""
     return Workflow(
         name="sql_rag_pipeline",
         edges=[
@@ -69,6 +77,7 @@ def build_sql_rag_workflow() -> Workflow:
                 START,
                 load_schema_context,
                 query_understanding_agent,
+                delay_1,                     # Pause before classification
                 query_classification_agent,
                 route_by_classification,
             ),
@@ -83,15 +92,20 @@ def build_sql_rag_workflow() -> Workflow:
             (
                 time_lag_agent,
                 load_relevant_schema_detail,
+                delay_2,                     # Pause before generation
                 query_generation_agent,
+                delay_3,                     # Pause before review
                 query_review_agent,
+                delay_4,                     # Pause before execution
                 query_execution_agent,
+                delay_5,                     # Pause before visualization
                 query_visualization_agent,
                 check_fallback,
             ),
-            # VECTOR branch -- converges on the same check_fallback node as SQL
+            # VECTOR branch -- strictly isolated using vector_delay_1
             (
                 vector_retrieval_agent,
+                vector_delay_1,              # Dedicated vector delay
                 vector_synthesis_agent,
                 check_fallback,
             ),
@@ -102,7 +116,4 @@ def build_sql_rag_workflow() -> Workflow:
         ],
     )
 
-
-# Module-level singleton -- the graph definition is stateless and safe to reuse
-# across requests; per-request state lives in the ADK Session, not the graph.
 sql_rag_workflow = build_sql_rag_workflow()

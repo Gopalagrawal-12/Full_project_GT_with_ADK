@@ -22,7 +22,7 @@ from google.adk.tools import FunctionTool
 
 from tools.vector_search_tool import vector_search
 
-_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-flash-latest")
+_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-2.5-flash")
 
 vector_retrieval_agent = Agent(
     name="vector_retrieval",

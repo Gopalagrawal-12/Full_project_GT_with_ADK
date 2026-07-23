@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from typing import Any
 
 from google.adk import Context, Event
 from google.adk.workflow import DEFAULT_ROUTE, node
@@ -33,6 +35,43 @@ from google.adk.workflow import DEFAULT_ROUTE, node
 from tools.schema_tool import fetch_schema_overview, fetch_schema_relevant_detail
 
 logger = logging.getLogger("adk_rag.services.graph_nodes")
+
+
+def _extract_json_payload(raw: Any) -> dict[str, Any]:
+    """
+    Defensively extracts a JSON object from string, dict, or LLM markdown output.
+    Handles extra commentary, markdown blocks (```json ... ```), and trailing noise.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return {}
+
+    cleaned = raw.strip()
+
+    # 1. Strip markdown fences if present
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    # 2. Try standard json.loads
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 3. Extract the first {...} blob via regex if the LLM included surrounding text
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {}
 
 
 @node
@@ -49,10 +88,7 @@ async def load_relevant_schema_detail(ctx: Context) -> None:
     query_generation_agent gets exactly the detail it needs and no more.
     """
     raw_intent = ctx.state.get("parsed_intent", "{}")
-    try:
-        intent = json.loads(raw_intent) if isinstance(raw_intent, str) else (raw_intent or {})
-    except (json.JSONDecodeError, TypeError):
-        intent = {}
+    intent = _extract_json_payload(raw_intent)
 
     ctx.state["db_schema_detail"] = await fetch_schema_relevant_detail(
         entities=intent.get("core_entities", []) or [],
@@ -60,17 +96,42 @@ async def load_relevant_schema_detail(ctx: Context) -> None:
         aliases=intent.get("aliases", {}) or {},
     )
 
+
 @node
-async def route_by_classification(ctx: Context):
-    raw = ctx.state["query_path"]
+async def route_by_classification(ctx: Context) -> Event:
+    """
+    Parses state['query_path'] safely and returns an Event with route="SQL" or "VECTOR".
+    Includes multiple fallback layers if the LLM hallucinated the output format.
+    """
+    raw = ctx.state.get("query_path", "")
+    path: str | None = None
 
-    if isinstance(raw, str):
-        import json
-        raw = json.loads(raw)
+    # Try parsing via helper
+    parsed = _extract_json_payload(raw)
+    if "path" in parsed and isinstance(parsed["path"], str):
+        path = parsed["path"]
 
-    path = raw["path"].upper()
+    # Fallback: Check if "SQL" or "VECTOR" exists as a plain string inside the output
+    if not path and isinstance(raw, str):
+        upper_raw = raw.upper()
+        if "SQL" in upper_raw:
+            path = "SQL"
+        elif "VECTOR" in upper_raw:
+            path = "VECTOR"
+
+    # Default fallback to VECTOR if parsing completely fails
+    if not path:
+        logger.warning(
+            "route_by_classification: could not parse route from query_path (%r). Defaulting to VECTOR.",
+            raw,
+        )
+        path = "VECTOR"
+
+    path = path.strip().upper()
+    logger.info("route_by_classification: selecting route %s", path)
 
     return Event(route=path)
+
 
 @node
 async def check_fallback(ctx: Context) -> str:

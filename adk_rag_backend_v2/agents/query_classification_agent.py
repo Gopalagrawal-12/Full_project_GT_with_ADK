@@ -14,7 +14,7 @@ import os
 
 from google.adk import Agent
 
-_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-flash-latest")
+_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-2.5-flash")
 
 query_classification_agent = Agent(
     name="query_classification",

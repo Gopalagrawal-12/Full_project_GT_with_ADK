@@ -19,7 +19,7 @@ import os
 
 from google.adk import Agent
 
-_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-flash-latest")
+_MODEL = os.getenv("ADK_AGENT_MODEL", "gemini-2.5-flash")
 
 external_support_agent = Agent(
     name="external_support",
